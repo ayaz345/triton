@@ -192,9 +192,7 @@ class dtype:
         return False
 
     def __eq__(self, other: dtype):
-        if not isinstance(other, dtype):
-            return False
-        return self.name == other.name
+        return False if not isinstance(other, dtype) else self.name == other.name
 
     def __ne__(self, other: dtype):
         return not self.__eq__(other)
@@ -374,10 +372,7 @@ class constexpr:
     """
 
     def __init__(self, value):
-        if isinstance(value, constexpr):
-            self.value = value.value
-        else:
-            self.value = value
+        self.value = value.value if isinstance(value, constexpr) else value
 
     def __repr__(self) -> str:
         return f"constexpr[{self.value}]"
@@ -507,7 +502,7 @@ class tensor:
 
     def __str__(self) -> str:
         # ex. "float32[3,4]"
-        return str(self.dtype) + '[' + ','.join(str(s) for s in self.shape) + ']'
+        return f'{str(self.dtype)}[' + ','.join(str(s) for s in self.shape) + ']'
 
     @builtin
     def __add__(self, other, _builder=None):
@@ -711,9 +706,12 @@ class tensor:
         for dim, sl in enumerate(slices):
             if isinstance(sl, constexpr) and sl.value is None:
                 ret = semantic.expand_dims(ret, dim, _builder)
-            elif isinstance(sl, slice) and sl.start is None and sl.stop is None and sl.step is None:
-                pass
-            else:
+            elif (
+                not isinstance(sl, slice)
+                or sl.start is not None
+                or sl.stop is not None
+                or sl.step is not None
+            ):
                 assert False, f"unsupported tensor index: {sl}"
         return ret
 
@@ -734,9 +732,7 @@ class tensor:
 # SPMD Programming Model
 # -----------------------
 def _constexpr_to_value(v):
-    if isinstance(v, constexpr):
-        return v.value
-    return v
+    return v.value if isinstance(v, constexpr) else v
 
 
 @builtin
@@ -1320,10 +1316,7 @@ def _promote_reduction_input(t, _builder=None):
         return t.to(int32, _builder=_builder)
 
     # hardware doesn't support FMAX, FMIN, CMP for bfloat16
-    if scalar_ty is bfloat16:
-        return t.to(float32, _builder=_builder)
-
-    return t
+    return t.to(float32, _builder=_builder) if scalar_ty is bfloat16 else t
 
 
 @builtin
@@ -1544,15 +1537,9 @@ def device_print(prefix, *args, _builder=None):
     import string
     prefix = _constexpr_to_value(prefix)
     assert isinstance(prefix, str), f"{prefix} is not string"
-    b_ascii = True
-    for ch in prefix:
-        if ch not in string.printable:
-            b_ascii = False
-            break
+    b_ascii = all(ch in string.printable for ch in prefix)
     assert b_ascii, f"{prefix} is not an ascii string"
-    new_args = []
-    for arg in args:
-        new_args.append(_to_tensor(arg, _builder))
+    new_args = [_to_tensor(arg, _builder) for arg in args]
     return semantic.device_print(prefix, new_args, _builder)
 
 
@@ -1644,7 +1631,7 @@ def dispatch(func, lib_name: str, lib_path: str, args: list, arg_type_symbol_dic
         :param _builder: the builder
         :return: the return value of the function
     '''
-    if len(arg_type_symbol_dict) == 0:
+    if not arg_type_symbol_dict:
         raise ValueError("arg_type_symbol_dict is empty")
 
     num_args = len(list(arg_type_symbol_dict.keys())[0])
@@ -1666,12 +1653,11 @@ def dispatch(func, lib_name: str, lib_path: str, args: list, arg_type_symbol_dic
     if arg_types not in arg_type_symbol_dict:
         raise ValueError(f"input arg type does not match."
                          f"Expect one of {arg_type_symbol_dict.keys()}, got {arg_types}")
-    else:
-        symbol = arg_type_symbol_dict[arg_types][0]
-        ret_type = arg_type_symbol_dict[arg_types][1]
-        if ret_shape:
-            ret_type = block_type(ret_type, ret_shape)
-        return tensor(func(lib_name, lib_path, symbol, arg_list, ret_type.to_ir(_builder), is_pure), ret_type)
+    symbol = arg_type_symbol_dict[arg_types][0]
+    ret_type = arg_type_symbol_dict[arg_types][1]
+    if ret_shape:
+        ret_type = block_type(ret_type, ret_shape)
+    return tensor(func(lib_name, lib_path, symbol, arg_list, ret_type.to_ir(_builder), is_pure), ret_type)
 
 
 def extern_elementwise(lib_name: str, lib_path: str, args: list, arg_type_symbol_dict: dict, is_pure: bool, _builder=None):
@@ -1694,15 +1680,12 @@ def extern_elementwise(lib_name: str, lib_path: str, args: list, arg_type_symbol
         arg_types.append(dispatch_args[i].dtype)
         if dispatch_args[i].type.is_block():
             all_scalar = False
-    if len(arg_types) > 0:
+    if arg_types:
         arg_types = tuple(arg_types)
-        arithmetic_check = True
-        # If there's a type tuple that is not supported by the library, we will do arithmetic check
-        if arg_types in arg_type_symbol_dict:
-            arithmetic_check = False
+        arithmetic_check = arg_types not in arg_type_symbol_dict
         broadcast_arg = dispatch_args[0]
         # Get the broadcast shape over all the arguments
-        for i, item in enumerate(dispatch_args):
+        for item in dispatch_args:
             _, broadcast_arg = semantic.binary_op_type_checking_impl(
                 item, broadcast_arg, _builder, arithmetic_check=arithmetic_check)
         # Change the shape of each argument based on the broadcast shape

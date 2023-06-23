@@ -24,7 +24,7 @@ torch_dtypes = ['bool'] + int_dtypes + ['uint8'] + float_dtypes + ['bfloat16']
 
 def _bitwidth(dtype: str) -> int:
     # ex.: "int64" -> 64
-    return int(re.search(r'(\d+)$', dtype).group(1))
+    return int(re.search(r'(\d+)$', dtype)[1])
 
 
 def numpy_random(shape, dtype_str, rs: Optional[RandomState] = None, low=None, high=None):
@@ -62,14 +62,15 @@ def to_triton(x: np.ndarray, device='cuda', dst_type=None) -> Union[TensorWrappe
           If dst_type is None, we infer dst_type from x.
     '''
     t = x.dtype.name
-    if t in uint_dtypes:
-        signed_type_name = t.lstrip('u')  # e.g. "uint16" -> "int16"
-        x_signed = x.astype(getattr(np, signed_type_name))
-        return reinterpret(torch.tensor(x_signed, device=device), getattr(tl, t))
-    else:
-        if t == 'float32' and dst_type == 'bfloat16':
-            return torch.tensor(x, device=device).bfloat16()
-        return torch.tensor(x, device=device)
+    if t not in uint_dtypes:
+        return (
+            torch.tensor(x, device=device).bfloat16()
+            if t == 'float32' and dst_type == 'bfloat16'
+            else torch.tensor(x, device=device)
+        )
+    signed_type_name = t.lstrip('u')  # e.g. "uint16" -> "int16"
+    x_signed = x.astype(getattr(np, signed_type_name))
+    return reinterpret(torch.tensor(x_signed, device=device), getattr(tl, t))
 
 
 def torch_dtype_name(dtype) -> str:
@@ -78,7 +79,7 @@ def torch_dtype_name(dtype) -> str:
     elif isinstance(dtype, torch.dtype):
         # 'torch.int64' -> 'int64'
         m = re.match(r'^torch\.(\w+)$', str(dtype))
-        return m.group(1)
+        return m[1]
     else:
         raise TypeError(f'not a triton or torch dtype: {type(dtype)}')
 
@@ -398,10 +399,7 @@ def test_bitwise_op(dtype_x, dtype_y, op, device='cuda'):
 def test_shift_op(dtype_x, dtype_y, op, device='cuda'):
     expr = f'x {op} y'
     bw = max(_bitwidth(dtype_x), _bitwidth(dtype_y))
-    if dtype_x.startswith('int'):
-        dtype_z = f'int{bw}'
-    else:
-        dtype_z = f'uint{bw}'
+    dtype_z = f'int{bw}' if dtype_x.startswith('int') else f'uint{bw}'
     numpy_expr = f'x.astype(np.{dtype_z}) {op} y.astype(np.{dtype_z})'
     _test_binary(dtype_x, dtype_y, expr, numpy_expr, device=device, y_low=0, y_high=65)
 
@@ -692,10 +690,7 @@ def test_math_op(dtype_x, expr, device='cuda'):
 # ----------------
 
 
-@pytest.mark.parametrize("dtype_x", [
-    (dtype_x)
-    for dtype_x in dtypes_with_bfloat16
-])
+@pytest.mark.parametrize("dtype_x", list(dtypes_with_bfloat16))
 def test_abs(dtype_x, device='cuda'):
     _test_unary(dtype_x, 'tl.abs(x)', 'np.abs(x) ', device=device)
 
@@ -882,14 +877,8 @@ def noinline_shared_fn(x, y, Z):
 
 @triton.jit(noinline=True)
 def noinline_dynamic_fn(x, y, Z):
-    if x >= 1:
-        x = noinline_call_graph_fn1(x)
-    else:
-        x = noinline_call_graph_fn2(x)
-    if y >= 2:
-        y = noinline_call_graph_fn2(y)
-    else:
-        y = noinline_call_graph_fn1(y)
+    x = noinline_call_graph_fn1(x) if x >= 1 else noinline_call_graph_fn2(x)
+    y = noinline_call_graph_fn2(y) if y >= 2 else noinline_call_graph_fn1(y)
     z = x + y
     tl.store(Z, z)
 
@@ -927,7 +916,7 @@ def test_noinline(mode):
     kernel[(1,)](x, y, z, num_warps=1)
     if mode == "simple":
         assert torch.equal(z, x + y)
-    elif mode == "call_graph" or mode == "dynamic" or mode == "multi_values":
+    elif mode in ["call_graph", "dynamic", "multi_values"]:
         assert torch.equal(z, x + 1 + y + 2)
     elif mode == "shared":
         ref = torch.full((16, 16), 16, device=device, dtype=torch.float32)
@@ -1360,9 +1349,7 @@ def get_reduced_dtype(dtype_str, op):
         return 'int32'
     if dtype_str in ['int8', 'uint8', 'int16', 'uint16']:
         return 'int32'
-    if dtype_str == 'bfloat16':
-        return 'float32'
-    return dtype_str
+    return 'float32' if dtype_str == 'bfloat16' else dtype_str
 
 
 @pytest.mark.parametrize("op, dtype_str, shape",
@@ -2059,7 +2046,7 @@ def test_constexpr(literal, dtype_str):
     kernel_patched = patch_kernel(kernel, {'GENERATE_TEST_HERE': f"{literal}"})
     out = torch.zeros((1,), dtype=torch.float32, device="cuda")
     h = kernel_patched[(1,)](out)
-    assert re.search(r"arith.constant .* : " + dtype_str, h.asm["ttir"]) is not None
+    assert re.search(f"arith.constant .* : {dtype_str}", h.asm["ttir"]) is not None
 
 # TODO: uncomment once DotOperandEncoding::getElemsPerThread is implemented
 # @pytest.mark.parametrize("dtype_str", ['float32', 'float16'])
@@ -2563,7 +2550,7 @@ def test_math_tensor(dtype_str, expr, lib_path):
         y_ref = x * pow(2, 2)
     elif expr == 'math.pow_dtype':
         x = np.abs(x)
-        kernel = patch_kernel(kernel, {'GENERATE_TEST_HERE': f'tl.math.pow(x, 0.5)'})
+        kernel = patch_kernel(kernel, {'GENERATE_TEST_HERE': 'tl.math.pow(x, 0.5)'})
         y_ref = np.power(x, 0.5)
     elif expr == 'math.pow':
         # numpy does not allow negative factors in power, so we use abs()
@@ -2653,10 +2640,7 @@ def test_if_else():
 
     @triton.jit
     def kernel(Cond, TrueVal, FalseVal, Out):
-        if tl.load(Cond):
-            val = tl.load(TrueVal)
-        else:
-            val = tl.load(FalseVal)
+        val = tl.load(TrueVal) if tl.load(Cond) else tl.load(FalseVal)
         tl.store(Out, val)
 
     out = to_triton(np.zeros((1,), dtype=np.int32), device='cuda')
@@ -2712,10 +2696,7 @@ def add_fn_noinline(x):
 
 @triton.jit
 def add_fn_return(x, pid):
-    if pid == 0:
-        return x + 1
-    else:
-        return x + 2
+    return x + 1 if pid == 0 else x + 2
 
 
 @triton.jit
@@ -2725,10 +2706,7 @@ def add_fn_expr(Out, x):
 
 @triton.jit
 def add_fn_static_cond(x, cond: tl.constexpr):
-    if cond == "":
-        return x
-    else:
-        return x + 1
+    return x if cond == "" else x + 1
 
 
 @pytest.mark.parametrize("call_type", ["attribute", "attribute_jit",
@@ -2812,10 +2790,7 @@ def test_nested_if_else_return(_cond1, _cond2, _cond3):
             else:
                 return
         else:
-            if tl.load(Cond3):
-                val = tl.load(Val2)
-            else:
-                val = tl.load(Val3)
+            val = tl.load(Val2) if tl.load(Cond3) else tl.load(Val3)
         tl.store(Out, val)
 
     out = to_triton(np.full((1,), -1, dtype=np.int32), device='cuda')
@@ -2964,10 +2939,13 @@ def test_convert2d(dtype, shape, src_layout, interm_layout, dst_layout, device='
     #dst = {dst_layout}
     """
 
-    conversion = f"""
+    conversion = (
+        """
     %12 = triton_gpu.convert_layout %9 : (tensor<128x128xi32, #src>) -> tensor<128x128xi32, #dst>
     %13 = triton_gpu.convert_layout %11 : (tensor<128x128xf16, #src>) -> tensor<128x128xf16, #dst>
-    """ if interm_layout is None else f"""
+    """
+        if interm_layout is None
+        else """
     %15 = triton_gpu.convert_layout %9 : (tensor<128x128xi32, #src>) -> tensor<128x128xi32, #interm>
     %16 = triton_gpu.convert_layout %15 : (tensor<128x128xi32, #interm>) -> tensor<128x128xi32, #src>
     %17 = triton_gpu.convert_layout %11 : (tensor<128x128xf16, #src>) -> tensor<128x128xf16, #interm>
@@ -2976,6 +2954,7 @@ def test_convert2d(dtype, shape, src_layout, interm_layout, dst_layout, device='
     %12 = triton_gpu.convert_layout %16 : (tensor<128x128xi32, #src>) -> tensor<128x128xi32, #dst>
     %13 = triton_gpu.convert_layout %18 : (tensor<128x128xf16, #src>) -> tensor<128x128xf16, #dst>
     """
+    )
 
     ir = layouts + """
     module attributes {"triton_gpu.num-warps" = 4 : i32} {

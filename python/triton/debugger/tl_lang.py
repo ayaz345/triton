@@ -29,9 +29,7 @@ def _primitive_to_tensor(x):
     elif isinstance(x, WrappedTensor):
         return x
     elif isinstance(x, debugger_constexpr):
-        if x.value is None:
-            return None
-        return _primitive_to_tensor(x.value)
+        return None if x.value is None else _primitive_to_tensor(x.value)
     elif x is None:
         return None
     assert False, f"cannot convert {x} of type {type(x)} to tensor"
@@ -64,9 +62,7 @@ def _tensor_operation(func):
         def unwrap_tensor(v):
             if isinstance(v, WrappedTensor):
                 return v.tensor
-            if isinstance(v, debugger_constexpr):
-                return v.value
-            return v
+            return v.value if isinstance(v, debugger_constexpr) else v
 
         new_args = tuple(map(unwrap_tensor, args))
         new_kwargs = {k: unwrap_tensor(v) for k, v in kwargs.items()}
@@ -79,13 +75,10 @@ def _tensor_operation(func):
 
 class debugger_constexpr:
     def __init__(self, value):
-        if isinstance(value, debugger_constexpr):
-            self.value = value.value
-        else:
-            self.value = value
+        self.value = value.value if isinstance(value, debugger_constexpr) else value
 
     def __str__(self) -> str:
-        return "debugger_constexpr(" + str(self.value) + ")"
+        return f"debugger_constexpr({str(self.value)})"
 
     def __index__(self) -> int:
         return self.value
@@ -149,7 +142,7 @@ class WrappedTensor:
         return self.tensor.item()
 
     def __str__(self) -> str:
-        return "wrapped_" + str(self.tensor)
+        return f"wrapped_{str(self.tensor)}"
 
     def __bool__(self) -> bool:
         return torch.all(self.tensor == True).item()  # noqa: E712
@@ -331,9 +324,7 @@ class WrappedTensor:
 
 
 def _constexpr_to_value(v):
-    if isinstance(v, debugger_constexpr):
-        return v.value
-    return v
+    return v.value if isinstance(v, debugger_constexpr) else v
 
 
 class TritonLangProxy:
@@ -596,9 +587,7 @@ class TritonLangProxy:
 
     @_tensor_operation
     def max(self, input, axis=None):
-        if axis is None:
-            return torch.max(input)
-        return torch.max(input, dim=axis).values
+        return torch.max(input) if axis is None else torch.max(input, dim=axis).values
 
     @_tensor_operation
     def argmax(self, input, axis):
@@ -606,9 +595,7 @@ class TritonLangProxy:
 
     @_tensor_operation
     def min(self, input, axis=None):
-        if axis is None:
-            return torch.min(input)
-        return torch.min(input, dim=axis).values
+        return torch.min(input) if axis is None else torch.min(input, dim=axis).values
 
     @_tensor_operation
     def argmin(self, input, axis):
@@ -616,9 +603,7 @@ class TritonLangProxy:
 
     @_tensor_operation
     def sum(self, input, axis=None):
-        if axis is None:
-            return torch.sum(input)
-        return torch.sum(input, dim=axis)
+        return torch.sum(input) if axis is None else torch.sum(input, dim=axis)
 
     @_tensor_operation
     def xor_sum(self, input, axis):

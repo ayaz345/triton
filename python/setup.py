@@ -119,7 +119,7 @@ def download_and_copy_ptxas():
         download = True
         if os.path.exists(dst_path):
             curr_version = subprocess.check_output([dst_path, "--version"]).decode("utf-8").strip()
-            curr_version = re.search(r"V([.|\d]+)", curr_version).group(1)
+            curr_version = re.search(r"V([.|\d]+)", curr_version)[1]
             download = curr_version != version
     if download:
         print(f'downloading and extracting {url} ...')
@@ -163,7 +163,7 @@ class CMakeBuild(build_ext):
             )
 
         match = re.search(r"version\s*(?P<major>\d+)\.(?P<minor>\d+)([\d.]+)?", out.decode())
-        cmake_major, cmake_minor = int(match.group("major")), int(match.group("minor"))
+        cmake_major, cmake_minor = int(match["major"]), int(match["minor"])
         if (cmake_major, cmake_minor) < (3, 18):
             raise RuntimeError("CMake >= 3.18.0 is required")
 
@@ -181,7 +181,7 @@ class CMakeBuild(build_ext):
     def build_extension(self, ext):
         lit_dir = shutil.which('lit')
         user_home = os.getenv("HOME") or os.getenv("USERPROFILE") or \
-            os.getenv("HOMEPATH") or None
+                os.getenv("HOMEPATH") or None
         if not user_home:
             raise RuntimeError("Could not find user home directory")
         triton_cache_path = os.path.join(user_home, ".triton")
@@ -195,15 +195,15 @@ class CMakeBuild(build_ext):
         python_include_dir = sysconfig.get_path("platinclude")
         cmake_args = [
             "-DLLVM_ENABLE_WERROR=ON",
-            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=" + extdir,
+            f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}",
             "-DTRITON_BUILD_TUTORIALS=OFF",
             "-DTRITON_BUILD_PYTHON_MODULE=ON",
-            "-DPython3_EXECUTABLE:FILEPATH=" + sys.executable,
+            f"-DPython3_EXECUTABLE:FILEPATH={sys.executable}",
             "-DCMAKE_VERBOSE_MAKEFILE:BOOL=ON",
-            "-DPYTHON_INCLUDE_DIRS=" + python_include_dir,
+            f"-DPYTHON_INCLUDE_DIRS={python_include_dir}",
         ]
         if lit_dir is not None:
-            cmake_args.append("-DLLVM_EXTERNAL_LIT=" + lit_dir)
+            cmake_args.append(f"-DLLVM_EXTERNAL_LIT={lit_dir}")
         cmake_args.extend(thirdparty_cmake_args)
 
         # configuration
@@ -216,9 +216,9 @@ class CMakeBuild(build_ext):
                 cmake_args += ["-A", "x64"]
             build_args += ["--", "/m"]
         else:
-            cmake_args += ["-DCMAKE_BUILD_TYPE=" + cfg]
+            cmake_args += [f"-DCMAKE_BUILD_TYPE={cfg}"]
             max_jobs = os.getenv("MAX_JOBS", str(2 * os.cpu_count()))
-            build_args += ['-j' + max_jobs]
+            build_args += [f'-j{max_jobs}']
 
         if check_env_flag("TRITON_BUILD_WITH_CLANG_LLD"):
             cmake_args += ["-DCMAKE_C_COMPILER=clang",

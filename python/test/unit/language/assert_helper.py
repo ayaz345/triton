@@ -18,7 +18,7 @@ def kernel_device_assert(X, Y, BLOCK: tl.constexpr):
 def kernel_device_assert_scalar(X, Y, BLOCK: tl.constexpr):
     x = tl.load(X + tl.arange(0, BLOCK))
     # Trivial assert
-    tl.device_assert(0 == 0, "x != 0")
+    tl.device_assert(True, "x != 0")
     tl.store(Y + tl.arange(0, BLOCK), x)
 
 

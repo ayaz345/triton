@@ -30,17 +30,16 @@ def make_stub(name, signature, constants):
     so_name = f"{name}.so"
     # retrieve stub from cache if it exists
     cache_path = so_cache_manager.get_file(so_name)
-    if cache_path is None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            src = generate_launcher(constants, signature)
-            src_path = os.path.join(tmpdir, "main.c")
-            with open(src_path, "w") as f:
-                f.write(src)
-            so = _build(name, src_path, tmpdir)
-            with open(so, "rb") as f:
-                return so_cache_manager.put(f.read(), so_name, binary=True)
-    else:
+    if cache_path is not None:
         return cache_path
+    with tempfile.TemporaryDirectory() as tmpdir:
+        src = generate_launcher(constants, signature)
+        src_path = os.path.join(tmpdir, "main.c")
+        with open(src_path, "w") as f:
+            f.write(src)
+        so = _build(name, src_path, tmpdir)
+        with open(so, "rb") as f:
+            return so_cache_manager.put(f.read(), so_name, binary=True)
 
 # ----- source code generation --------
 

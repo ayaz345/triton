@@ -38,7 +38,7 @@ def test_block_copy(dtype_str, n, padding_option):
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
     block_copy_kernel[grid](a_ptr=a, b_ptr=b, N=n, BLOCK_SIZE=64, padding_option=padding_option)
 
-    assert torch.all(a[0: n // 2] == b[0: n // 2])
+    assert torch.all(a[:n // 2] == b[:n // 2])
     if padding_option == "zero":
         assert torch.all(b[n // 2: n] == 0)
     else:

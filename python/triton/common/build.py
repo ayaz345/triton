@@ -61,8 +61,8 @@ def _build(name, src, srcdir):
         clang = shutil.which("clang")
         gcc = shutil.which("gcc")
         cc = gcc if gcc is not None else clang
-        if cc is None:
-            raise RuntimeError("Failed to find C compiler. Please specify via CC environment variable.")
+    if cc is None:
+        raise RuntimeError("Failed to find C compiler. Please specify via CC environment variable.")
     # This function was renamed and made public in Python 3.10
     if hasattr(sysconfig, 'get_default_scheme'):
         scheme = sysconfig.get_default_scheme()
@@ -102,10 +102,7 @@ def _build(name, src, srcdir):
         libraries=libraries,
     )
     # build extension module
-    args = ['build_ext']
-    args.append('--build-temp=' + srcdir)
-    args.append('--build-lib=' + srcdir)
-    args.append('-q')
+    args = ['build_ext', f'--build-temp={srcdir}', f'--build-lib={srcdir}', '-q']
     args = dict(
         name=name,
         ext_modules=[ext],

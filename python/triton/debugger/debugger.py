@@ -49,8 +49,7 @@ def program_ids_from_grid(grid: Tuple[int, ...]) -> Tuple[int, ...]:
     index_combinations = list(itertools.product(*ranges_for_each_dimension))
     random.shuffle(index_combinations)
 
-    for index_combination in index_combinations:
-        yield index_combination
+    yield from index_combinations
 
 
 class DebuggerFunction:
@@ -62,22 +61,19 @@ class DebuggerFunction:
         return name in self.func.__annotations__ and self.func.__annotations__[name] is triton.language.core.constexpr
 
     def _get_constexpr(self):
-        result = []
-        for name, annotation in self.func.__annotations__.items():
-            if annotation is triton.language.core.constexpr:
-                result.append(name)
-        return result
+        return [
+            name
+            for name, annotation in self.func.__annotations__.items()
+            if annotation is triton.language.core.constexpr
+        ]
 
     def _assert_constexpr(self, **kwargs):
         constexp = self._get_constexpr()
         missing = [i for i in constexp if i not in kwargs.keys()]
-        assert len(missing) == 0, f"You must specify constexpr {missing}"
+        assert not missing, f"You must specify constexpr {missing}"
 
     def _get_grid(self, **kwargs):
-        if callable(self.grid):
-            return self.grid(kwargs)
-        else:
-            return self.grid
+        return self.grid(kwargs) if callable(self.grid) else self.grid
 
     def __call__(self, *args, **kwargs):
         self._assert_constexpr(**kwargs)
@@ -145,9 +141,7 @@ class AutotuneRunner:
         for config in self.autotune_params["configs"][1:]:
 
             def convert_arg(v):
-                if torch.is_tensor(v):
-                    return torch.clone(v)
-                return v
+                return torch.clone(v) if torch.is_tensor(v) else v
 
             new_args = tuple(map(convert_arg, args))
             new_kwargs = {k: convert_arg(v) for k, v in kwargs.items()}

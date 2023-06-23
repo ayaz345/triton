@@ -50,15 +50,10 @@ class FileCacheManager(CacheManager):
         return os.path.join(self.cache_dir, filename)
 
     def has_file(self, filename):
-        if not self.cache_dir:
-            return False
-        return os.path.exists(self._make_path(filename))
+        return os.path.exists(self._make_path(filename)) if self.cache_dir else False
 
     def get_file(self, filename) -> Optional[str]:
-        if self.has_file(filename):
-            return self._make_path(filename)
-        else:
-            return None
+        return self._make_path(filename) if self.has_file(filename) else None
 
     def get_group(self, filename: str) -> Optional[Dict[str, str]]:
         grp_filename = f"__grp__{filename}"

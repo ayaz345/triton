@@ -159,7 +159,7 @@ def matmul_kernel_with_block_pointers(
     # of fp32 values for higher accuracy.
     # `accumulator` will be converted back to fp16 after the loop.
     accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
-    for k in range(0, K, BLOCK_SIZE_K):
+    for _ in range(0, K, BLOCK_SIZE_K):
         # Load with boundary checks, no need to calculate the mask manually.
         # For better performance, you may remove some axis from the boundary
         # check, if you can guarantee that the access is always in-bound in

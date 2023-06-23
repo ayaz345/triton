@@ -43,10 +43,7 @@ def test_assert(func_type: str):
     proc = subprocess.Popen([sys.executable, assert_path, func_type], stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
     _, errs = proc.communicate()
     errs = errs.splitlines()
-    num_errs = 0
-    for err in errs:
-        if "x != 0" in err.decode("utf-8"):
-            num_errs += 1
+    num_errs = sum(1 for err in errs if "x != 0" in err.decode("utf-8"))
     os.environ["TRITON_DEBUG"] = "0"
     if func_type != "static_assert":
         assert num_errs == 127
@@ -59,22 +56,14 @@ def test_assert_nested(caller_type, callee_type):
     proc = subprocess.Popen([sys.executable, assert_path, caller_type, callee_type], stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
     _, errs = proc.communicate()
     errs = errs.splitlines()
-    num_errs = 0
-    for err in errs:
-        if "x != 0" in err.decode("utf-8"):
-            num_errs += 1
-    if caller_type == "none":
-        if callee_type == "true":
-            assert num_errs == 127
-        else:
-            assert num_errs == 0
-    elif caller_type == "true":
-        if callee_type == "false":
-            assert num_errs == 0
-        else:
-            assert num_errs == 127
-    elif caller_type == "false":
-        if callee_type == "true":
-            assert num_errs == 127
-        else:
-            assert num_errs == 0
+    num_errs = sum(1 for err in errs if "x != 0" in err.decode("utf-8"))
+    if (
+        caller_type in ["none", "false"]
+        and callee_type == "true"
+        or caller_type not in ["none", "false"]
+        and caller_type == "true"
+        and callee_type != "false"
+    ):
+        assert num_errs == 127
+    elif caller_type in ["none", "false", "true"]:
+        assert num_errs == 0

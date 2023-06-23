@@ -14,8 +14,7 @@ tmpdir = ".tmp"
 @triton.jit
 def function_1(i):
     i = i + 1
-    i = function_2(i)
-    return i
+    return function_2(i)
 
 
 @triton.jit
@@ -115,13 +114,13 @@ def test_constexpr_not_callable() -> None:
         kernel[(1, )](x, c="str")
     except BaseException:
         error = True
-    assert error is False
+    assert not error
     # try and catch
     try:
         kernel[(1, )](x, c=tl.abs)
     except BaseException:
         error = True
-    assert error is True
+    assert error
 
 
 def test_jit_warmup_cache() -> None:

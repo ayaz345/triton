@@ -133,7 +133,7 @@ def path_to_ptxas():
             if result is not None:
                 version = re.search(r".*release (\d+\.\d+).*", result.decode("utf-8"), flags=re.MULTILINE)
                 if version is not None:
-                    return ptxas, version.group(1)
+                    return ptxas, version[1]
     raise RuntimeError("Cannot find ptxas")
 
 
@@ -173,9 +173,9 @@ def get_amdgcn_bitcode_paths(arch):
                                            "oclc_wavefrontsize64_on.bc"]
 
     gfx_arch = arch[1]
-    gfx_arch_id = re.search('gfx(\\w+)', gfx_arch).group(1).strip()
+    gfx_arch_id = re.search('gfx(\\w+)', gfx_arch)[1].strip()
 
-    gpu_arch_specific_bitcode_library = 'oclc_isa_version_' + gfx_arch_id + ".bc"
+    gpu_arch_specific_bitcode_library = f'oclc_isa_version_{gfx_arch_id}.bc'
     bitcode_path_dir = os.path.join(Path(__file__).parent.resolve(), "third_party/rocm/lib/bitcode/")
 
     amdgcn_bitcode_paths = {}
@@ -183,11 +183,11 @@ def get_amdgcn_bitcode_paths(arch):
     for bc_lib in gpu_arch_agnostic_bitcode_libraries:
         bc_path = bitcode_path_dir + bc_lib
         if os.path.exists(bc_path):
-            amdgcn_bitcode_paths['library_' + str(i)] = bc_path
+            amdgcn_bitcode_paths[f'library_{str(i)}'] = bc_path
             i += 1
     bc_gfx_path = bitcode_path_dir + gpu_arch_specific_bitcode_library
     if os.path.exists(bc_gfx_path):
-        amdgcn_bitcode_paths['library_' + str(i)] = bc_gfx_path
+        amdgcn_bitcode_paths[f'library_{str(i)}'] = bc_gfx_path
 
     return amdgcn_bitcode_paths
 
@@ -200,16 +200,17 @@ def get_amdgpu_arch_fulldetails():
     try:
         # TODO: package rocm.cc with Triton
         rocm_path_dir = os.getenv("ROCM_PATH", default="/opt/rocm")
-        rocminfo = subprocess.check_output(rocm_path_dir + '/bin/rocminfo').decode()
-        gfx_arch_details = re.search('amd.*', rocminfo).group(0).strip().split('--')
+        rocminfo = subprocess.check_output(f'{rocm_path_dir}/bin/rocminfo').decode()
+        gfx_arch_details = re.search('amd.*', rocminfo)[0].strip().split('--')
         arch_triple = gfx_arch_details[0]
         arch_name_features = gfx_arch_details[1].split(':')
         arch_name = arch_name_features[0]
         arch_features = ""
 
         if (len(arch_name_features) == 3):
-            arch_features = "+" + re.search('\\w+', arch_name_features[1]).group(0) + ","\
-                            "-" + re.search('\\w+', arch_name_features[2]).group(0)
+            arch_features = (
+                "+" + re.search('\\w+', arch_name_features[1])[0] + "," "-"
+            ) + re.search('\\w+', arch_name_features[2])[0]
         return [arch_triple, arch_name, arch_features]
     except BaseException:
         return None
@@ -244,16 +245,14 @@ def get_kernel_name(src: str, pattern: str) -> str:
 
 def convert_type_repr(x):
     match = re.search(r'!tt\.ptr<(.*)>', x)
-    if match is not None:
-        return '*' + convert_type_repr(match.group(1))
-    return x
+    return f'*{convert_type_repr(match[1])}' if match is not None else x
 
 
 def make_hash(fn, arch, **kwargs):
     if isinstance(fn, triton.runtime.JITFunction):
         configs = kwargs["configs"]
         signature = kwargs["signature"]
-        constants = kwargs.get("constants", dict())
+        constants = kwargs.get("constants", {})
         num_warps = kwargs.get("num_warps", 4)
         num_stages = kwargs.get("num_stages", 3)
         debug = kwargs.get("debug", False)

@@ -28,7 +28,7 @@ if __name__ == '__main__':
     # TODO: clean-up and re-use triton.compiler primitive functions
     # check for validity of format arguments
     if args.target not in VALID_FORMATS:
-        print("Invalid target format: " + args.target)
+        print(f"Invalid target format: {args.target}")
         sys.exit(0)
 
     # parse source file to MLIR module
@@ -47,16 +47,13 @@ if __name__ == '__main__':
 
     # llvm-ir -> amdgcn
     if args.target == 'amdgcn':
-        # auto detect available architecture and features
-        # if nothing detected, set with default values
-        arch_details = tc.get_amdgpu_arch_fulldetails()
-        if not arch_details:
+        if arch_details := tc.get_amdgpu_arch_fulldetails():
+            arch_triple, arch_name, arch_features = arch_details
+
+        else:
             arch_name = ""
             arch_triple = "amdgcn-amd-amdhsa"
             arch_features = ""
-        else:
-            arch_triple, arch_name, arch_features = arch_details
-
         # stop processing if architecture name is not automatically detected and is not set manually
         if not args.gfx and not arch_name:
             raise argparse.ArgumentError(None, "Must specify --gfx for AMDGCN compilation")
